@@ -3,6 +3,7 @@ const APERTURE_LAYOUTS: &[LayoutInfo] = &[
     LayoutInfo { key: "axis", name: "Axis", en: "A quiet header. Three clear instruments.", vi: "Thanh ngữ cảnh, ba bảng thông số rõ ràng.", portrait: false },
     LayoutInfo { key: "ledger", name: "Ledger", en: "Three precise rows. Every reading in place.", vi: "Ba hàng thẳng, mỗi thông số một vị trí.", portrait: false },
     LayoutInfo { key: "duet", name: "Duet", en: "CPU and GPU in dialogue. A dedicated memory rail.", vi: "CPU và GPU song song, bộ nhớ thành cột riêng.", portrait: false },
+    LayoutInfo { key: "mruf", name: "Mruf", en: "Duet without music: memory usage only, a larger weather panel.", vi: "Duet không có nhạc: chỉ mức dùng bộ nhớ, thời tiết lớn hơn.", portrait: false },
     LayoutInfo { key: "orbit", name: "Orbit", en: "Measured arcs, a central clock, balanced side rails.", vi: "Vòng cung tiết chế, đồng hồ giữa, hai cánh cân đối.", portrait: false },
     LayoutInfo { key: "atelier", name: "Atelier", en: "An album-led composition with a full hardware desk.", vi: "Ảnh bìa lớn cùng bàn thông số đầy đủ.", portrait: false },
 ];

@@ -103,6 +103,9 @@ mod imp {
     pub(super) const PMLOG_CLK_MEMCLK: usize = 2;
     pub(super) const PMLOG_FAN_PERCENTAGE: usize = 15;
     pub(super) const PMLOG_TEMPERATURE_HOTSPOT_GCD: usize = 50;
+    /// ADL_PMLOG_TEMPERATURE_GFX: graphics core temperature; used when a driver /
+    /// generation (e.g. RDNA4) does not report the edge sensor.
+    pub(super) const PMLOG_TEMPERATURE_GFX: usize = 28;
 
     /// `ADLMemoryInfo2` (adl_structures.h), with spare room at the end in case a
     /// driver writes a longer version of the struct.
@@ -173,6 +176,8 @@ mod imp {
         vram_usage_fn: Option<AdlVramUsageFn>,
         vram_total_mb: Option<i32>,
         name: Option<String>,
+        /// Every AMD GPU found and its score, for `--diag`.
+        candidates: String,
     }
 
     impl GpuAmdInner {
@@ -209,16 +214,25 @@ mod imp {
                     return None;
                 }
 
-                // Find the first "present" AMD adapter (vendor_id 1002 decimal —
-                // not hex 0x1002 = 4098 — a slightly odd ADL quirk, confirmed
-                // from probe output).
-                let chosen = adapters.iter().find(|a| a.present != 0 && a.vendor_id == 1002)?;
-                let adapter_index = chosen.adapter_index;
-                let name = {
-                    let raw: Vec<u8> = chosen.adapter_name.iter().take_while(|c| **c != 0).map(|c| *c as u8).collect();
+                // Every "present" AMD adapter (vendor_id 1002 decimal — not hex
+                // 0x1002 = 4098 — a slightly odd ADL quirk, confirmed from probe
+                // output). ADL lists one entry per display output, so keep one per
+                // physical GPU (PCI bus). On a Ryzen with integrated graphics plus a
+                // Radeon card there are two GPUs; the best one is chosen below,
+                // once the ADL2 context exists (the first entry may be the iGPU,
+                // which reports no temperatures).
+                let mut cands: Vec<(c_int, c_int, Option<String>)> = Vec::new();
+                for a in adapters.iter().filter(|a| a.vendor_id == 1002 && (a.present != 0 || a.exist != 0)) {
+                    if cands.iter().any(|c| c.1 == a.bus_number) {
+                        continue;
+                    }
+                    let raw: Vec<u8> = a.adapter_name.iter().take_while(|c| **c != 0).map(|c| *c as u8).collect();
                     let n = String::from_utf8_lossy(&raw).trim().to_string();
-                    (!n.is_empty()).then_some(n)
-                };
+                    cands.push((a.adapter_index, a.bus_number, (!n.is_empty()).then_some(n)));
+                }
+                if cands.is_empty() {
+                    return None;
+                }
 
                 // Done with ADL v1, can destroy it now.
                 if let Some(destroy1) =
@@ -239,6 +253,40 @@ mod imp {
                 if create2(adl_malloc, 1, &mut context) != 0 || context.is_null() {
                     return None;
                 }
+
+                // Pick the GPU: one that reports a temperature first, then the one
+                // with the most dedicated memory (the discrete card over the iGPU).
+                let mem_info_fn = resolve::<AdlMemoryInfo2Fn>(module, "ADL2_Adapter_MemoryInfo2_Get");
+                let vram_of = |idx: c_int| -> Option<i32> {
+                    mem_info_fn.and_then(|f| unsafe {
+                        let mut info: AdlMemoryInfo2 = std::mem::zeroed();
+                        (f(context, idx, &mut info) == 0 && info.memory_size > 0)
+                            .then(|| (info.memory_size / (1024 * 1024)) as i32)
+                    })
+                };
+                let temps_of = |idx: c_int| -> i32 {
+                    let mut out = AdlPMLogDataOutput::default();
+                    out.size = std::mem::size_of::<AdlPMLogDataOutput>() as c_int;
+                    if unsafe { query_fn(context, idx, &mut out) } != 0 {
+                        return -1;
+                    }
+                    [PMLOG_TEMPERATURE_EDGE, PMLOG_TEMPERATURE_GFX, PMLOG_TEMPERATURE_HOTSPOT, PMLOG_TEMPERATURE_HOTSPOT_GCD]
+                        .iter()
+                        .filter(|&&i| out.sensors[i].supported != 0 && out.sensors[i].value > 0)
+                        .count() as i32
+                };
+                let mut candidates = String::new();
+                let mut best: Option<((i32, i32, i32), usize)> = None;
+                for (i, (idx, bus, n)) in cands.iter().enumerate() {
+                    let t = temps_of(*idx);
+                    let v = vram_of(*idx).unwrap_or(0);
+                    candidates.push_str(&format!("  adapter {idx} bus {bus} {:?}: temperature sensors={t} vram_mb={v}\n", n));
+                    let key = ((t > 0) as i32, v, t);
+                    if best.map_or(true, |(k, _)| key > k) {
+                        best = Some((key, i));
+                    }
+                }
+                let (adapter_index, _, name) = cands[best.map_or(0, |b| b.1)].clone();
 
                 // --- FrameMetrics (Fullscreen FPS) — uses the context above ---
                 // If the adapter doesn't support it, or one of the symbols is
@@ -285,12 +333,7 @@ mod imp {
                 // VRAM: used (MB) every sample, total (bytes) once.
                 let vram_usage_fn = resolve::<AdlVramUsageFn>(module, "ADL2_Adapter_DedicatedVRAMUsage_Get")
                     .or_else(|| resolve::<AdlVramUsageFn>(module, "ADL2_Adapter_VRAMUsage_Get"));
-                #[allow(unused_unsafe)]
-                let vram_total_mb = resolve::<AdlMemoryInfo2Fn>(module, "ADL2_Adapter_MemoryInfo2_Get").and_then(|f| unsafe {
-                    let mut info: AdlMemoryInfo2 = std::mem::zeroed();
-                    (f(context, adapter_index, &mut info) == 0 && info.memory_size > 0)
-                        .then(|| (info.memory_size / (1024 * 1024)) as i32)
-                });
+                let vram_total_mb = vram_of(adapter_index);
 
                 Some(GpuAmdInner {
                     query_fn,
@@ -302,6 +345,7 @@ mod imp {
                     vram_usage_fn,
                     vram_total_mb,
                     name,
+                    candidates,
                 })
             }
         }
@@ -342,7 +386,9 @@ mod imp {
             });
 
             super::GpuAmdData {
-                temp_edge_c: get(PMLOG_TEMPERATURE_EDGE),
+                temp_edge_c: get(PMLOG_TEMPERATURE_EDGE)
+                    .filter(|t| *t > 0)
+                    .or_else(|| get(PMLOG_TEMPERATURE_GFX).filter(|t| *t > 0)),
                 temp_hotspot_c: get(PMLOG_TEMPERATURE_HOTSPOT)
                     .filter(|t| *t > 0)
                     .or_else(|| get(PMLOG_TEMPERATURE_HOTSPOT_GCD).filter(|t| *t > 0)),
@@ -363,7 +409,8 @@ mod imp {
             let mut output = AdlPMLogDataOutput::default();
             output.size = std::mem::size_of::<AdlPMLogDataOutput>() as c_int;
             let status = unsafe { (self.query_fn)(self.context, self.adapter_index, &mut output) };
-            let mut out = format!("ADL PMLog status={status} name={:?} vram_total_mb={:?}\n", self.name, self.vram_total_mb);
+            let mut out = format!("ADL GPUs found:\n{}", self.candidates);
+            out.push_str(&format!("ADL PMLog status={status} adapter={} name={:?} vram_total_mb={:?}\n", self.adapter_index, self.name, self.vram_total_mb));
             for (i, s) in output.sensors.iter().enumerate() {
                 if s.supported != 0 {
                     out.push_str(&format!("  sensor[{i}] = {}\n", s.value));

@@ -32,6 +32,26 @@ fn hardware(p: &mut Painter, s: &Sec, r: R, mode: &str, ink: &Ink, k: f32) {
     let hero_w=if mode=="row" {210.0*k} else if mode=="wide" {236.0*k} else {iw};
     let hc=hero_fit(p,&s.hero,s.hero_unit,hc,hero_w);
     let color=if s.hero_color==th().text {ink.text} else {s.hero_color};
+    if mode=="usage" {
+        // Usage only: a large ring with the percentage, then Used / Free.
+        let cx=x+iw/2.0;
+        let cy=y+150.0*k;
+        let rr=110.0*k;
+        arc2(p,cx,cy,rr,8.0*k,-135.0,270.0,&|_| ink.muted,35);
+        if let Some(f)=s.hero_frac {
+            let c=s.colors[0];
+            arc2(p,cx,cy,rr,8.0*k,-135.0,270.0*f.clamp(0.0,1.0),&|_| c,255);
+        }
+        let hc=hero_fit(p,&s.hero,s.hero_unit,80.0*k,rr*1.4);
+        let hw=p.width(&s.hero,hc,W::Light)+p.width(s.hero_unit,hc*0.31,W::Light);
+        hero(p,cx-hw/2.0,cy+hc*0.45,&s.hero,s.hero_unit,hc,color,ink.muted);
+        let gy=y+290.0*k;
+        let cw=iw/2.0;
+        for (i,c) in s.cells.iter().take(2).enumerate() {
+            reading(p,c,(x+i as f32*cw,gy,cw-12.0*k,h-2.0*pd-290.0*k),36.0*k,ink,k);
+        }
+        return;
+    }
     if mode=="ring" {
         let cx=x+iw/2.0;
         let cy=y+86.0*k;
@@ -100,7 +120,12 @@ fn weather(p:&mut Painter,r:R,v:&Vm,ink:&Ink,k:f32) {
     if !compact && h>200.0*k {
         let city=ellipsize(p,&wx.city,14.0*k,W::Regular,w-40.0*k);
         p.text(x+20.0*k,y+150.0*k,&city,14.0*k,W::Regular,ink.dim,255);
-        weather_icon(p,x+(w-108.0*k)/2.0,y+188.0*k,108.0*k,wx.icon,wx.night);
+        if h>=372.0*k {
+            weather_icon(p,x+(w-108.0*k)/2.0,y+188.0*k,108.0*k,wx.icon,wx.night);
+        } else {
+            // Medium height: the icon sits beside the temperature so the forecast fits below.
+            weather_icon(p,x+w-20.0*k-84.0*k,y+20.0*k,84.0*k,wx.icon,wx.night);
+        }
     }
     let (fx,fy,fw)=if compact {(x+head,y+20.0*k,w-head-20.0*k)}else{(x+20.0*k,y+h-if tall{72.0*k}else{58.0*k},w-40.0*k)};
     wx_days(p,fx,fy,fw,v,12.0*k,if tall{30.0*k}else{24.0*k},ink,k);

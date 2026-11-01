@@ -120,6 +120,8 @@ pub enum Layout {
     Axis,
     Ledger,
     Duet,
+    /// Duet without music: memory usage only, larger weather.
+    Mruf,
     Orbit,
     Atelier,
 
@@ -174,7 +176,7 @@ pub enum Layout {
 impl Layout {
     pub const CURATED: [Layout; 7] = [Layout::Axis, Layout::Ledger, Layout::Duet, Layout::Orbit, Layout::Atelier, Layout::Focus, Layout::Grid];
     /// The landscape designs (what `pro_layout = all` rotates through).
-    pub const ALL: [Layout; 23] = [Layout::Axis, Layout::Ledger, Layout::Duet, Layout::Orbit, Layout::Atelier, Layout::Focus, Layout::Grid, Layout::Stack, Layout::Mosaic, Layout::Mixer, Layout::Chart, Layout::Player, Layout::Tint, Layout::Glass, Layout::Gauge, Layout::Swiss, Layout::Classic, Layout::Cockpit, Layout::Bento, Layout::Terminal, Layout::Chamfer, Layout::Rings, Layout::Dots];
+    pub const ALL: [Layout; 24] = [Layout::Axis, Layout::Ledger, Layout::Duet, Layout::Mruf, Layout::Orbit, Layout::Atelier, Layout::Focus, Layout::Grid, Layout::Stack, Layout::Mosaic, Layout::Mixer, Layout::Chart, Layout::Player, Layout::Tint, Layout::Glass, Layout::Gauge, Layout::Swiss, Layout::Classic, Layout::Cockpit, Layout::Bento, Layout::Terminal, Layout::Chamfer, Layout::Rings, Layout::Dots];
     /// The portrait designs (screen mounted vertically; `pro_layout = portrait`).
     pub const PORTRAIT: [Layout; 5] = [Layout::Lock, Layout::Equalizer, Layout::Receipt, Layout::Synthwave, Layout::Blueprint];
     pub fn name(self) -> &'static str {
@@ -182,6 +184,7 @@ impl Layout {
             Layout::Axis => "axis",
             Layout::Ledger => "ledger",
             Layout::Duet => "duet",
+            Layout::Mruf => "mruf",
             Layout::Orbit => "orbit",
             Layout::Atelier => "atelier",
             Layout::Classic => "classic",
@@ -211,7 +214,7 @@ impl Layout {
     }
     /// The clean collection, drawn with Inter.
     pub fn clean(self) -> bool {
-        matches!(self, Layout::Axis | Layout::Ledger | Layout::Duet | Layout::Orbit | Layout::Atelier | Layout::Focus | Layout::Grid | Layout::Tint | Layout::Glass | Layout::Gauge | Layout::Stack | Layout::Mosaic | Layout::Mixer | Layout::Chart | Layout::Player)
+        matches!(self, Layout::Axis | Layout::Ledger | Layout::Duet | Layout::Mruf | Layout::Orbit | Layout::Atelier | Layout::Focus | Layout::Grid | Layout::Tint | Layout::Glass | Layout::Gauge | Layout::Stack | Layout::Mosaic | Layout::Mixer | Layout::Chart | Layout::Player)
     }
     /// Drawn on a 462 x 1920 canvas and turned 90 degrees onto the panel.
     pub fn portrait(self) -> bool {

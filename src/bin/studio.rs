@@ -881,7 +881,7 @@ impl App {
     fn page_layouts(&mut self, ui: &mut egui::Ui) {
         let current = self.get_or("pro_layout", "axis");
         section_title(ui, self.t("The collection", "Bộ sưu tập"), self.t("Five new compositions, plus Focus and Grid. Designed for the 1920 × 462 display.", "Năm bố cục mới cùng Focus và Grid. Thiết kế cho màn 1920 × 462."));
-        let land: Vec<&LayoutInfo> = LAYOUTS.iter().filter(|l| !l.portrait && matches!(l.key,"axis"|"ledger"|"duet"|"orbit"|"atelier"|"focus"|"grid")).collect();
+        let land: Vec<&LayoutInfo> = LAYOUTS.iter().filter(|l| !l.portrait && matches!(l.key,"axis"|"ledger"|"duet"|"mruf"|"orbit"|"atelier"|"focus"|"grid")).collect();
         if let Some(k) = self.grid(ui, &land, &current, 2) {
             self.set("pro_layout", &k);
         }
@@ -898,7 +898,7 @@ impl App {
         });
         ui.add_space(12.0);
         ui.collapsing(self.t("Legacy landscape layouts", "Các bố cục ngang trước đây"), |ui| {
-            let legacy: Vec<&LayoutInfo> = LAYOUTS.iter().filter(|l| !l.portrait && !matches!(l.key,"axis"|"ledger"|"duet"|"orbit"|"atelier"|"focus"|"grid")).collect();
+            let legacy: Vec<&LayoutInfo> = LAYOUTS.iter().filter(|l| !l.portrait && !matches!(l.key,"axis"|"ledger"|"duet"|"mruf"|"orbit"|"atelier"|"focus"|"grid")).collect();
             if let Some(k) = self.grid(ui,&legacy,&current,3) {self.set("pro_layout",&k);}
         });
         section_title(ui, self.t("Portrait", "Màn hình dựng đứng"), self.t("For a display mounted vertically. Choose the turn direction on the Display page.", "Dành cho màn hình gắn dọc. Chọn chiều xoay ở trang Hiển thị."));

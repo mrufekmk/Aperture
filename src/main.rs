@@ -2141,6 +2141,10 @@ fn main() -> anyhow::Result<()> {
             if gpu_full.temp_hotspot_c.is_none() {
                 gpu_full.temp_hotspot_c = ext.and_then(|s| s.gpu_hotspot());
             }
+            // GPU temperature had no external fallback (only NVML / nvidia-smi / AMD ADL).
+            if gpu_full.temp_edge_c.is_none() {
+                gpu_full.temp_edge_c = ext.and_then(|s| s.gpu_temp());
+            }
             {
                 let src = |own: bool, ext_ok: bool| -> &'static str {
                     if own {
@@ -2156,6 +2160,7 @@ fn main() -> anyhow::Result<()> {
                 };
                 set_status("cpu_temp", src(latest_cpu_temp.is_some(), ext.and_then(|s| s.cpu_temp()).is_some()));
                 set_status("cpu_fan", src(false, ext_fan.is_some()));
+                set_status("gpu_temp", src(latest_gpu_data.temp_edge_c.is_some(), gpu_full.temp_edge_c.is_some()));
                 set_status("gpu_hotspot", src(latest_gpu_data.temp_hotspot_c.is_some(), gpu_full.temp_hotspot_c.is_some()));
                 set_status("ext", match extra.ext.as_ref().map(|(s, _)| *s) {
                     Some(aperture::sensors_ext::Source::Hwinfo) => "hwinfo",

@@ -1,0 +1,22 @@
+name: Build Aperture (mruf)
+# Builds only the two Windows programs and uploads them as a downloadable artifact.
+# Skips the design checks of validate.yml (the custom "mruf" layout has no music box).
+on:
+  push:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --locked --bin aperture-display --bin aperture
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aperture-mruf-windows
+          path: |
+            target/release/aperture-display.exe
+            target/release/aperture.exe

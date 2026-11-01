@@ -25,6 +25,13 @@ fn geometry(layout: Layout) -> Option<&'static [Widget]> {
             Widget { kind: "weather", r: (1560.0,172.0,336.0,158.0), mode: "compact" },
             Widget { kind: "music", r: (1560.0,346.0,336.0,92.0), mode: "compact" },
         ]),
+        Layout::Mruf => Some(&[
+            Widget { kind: "cpu", r: (24.0,24.0,1160.0,199.0), mode: "wide" },
+            Widget { kind: "gpu", r: (24.0,239.0,1160.0,199.0), mode: "wide" },
+            Widget { kind: "mem", r: (1200.0,24.0,344.0,414.0), mode: "usage" },
+            Widget { kind: "time", r: (1560.0,24.0,336.0,132.0), mode: "large" },
+            Widget { kind: "weather", r: (1560.0,172.0,336.0,266.0), mode: "large" },
+        ]),
         Layout::Orbit => Some(&[
             Widget { kind: "cpu", r: (24.0,24.0,376.0,414.0), mode: "ring" },
             Widget { kind: "gpu", r: (416.0,24.0,374.0,414.0), mode: "ring" },

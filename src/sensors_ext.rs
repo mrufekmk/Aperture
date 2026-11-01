@@ -31,6 +31,15 @@ impl Snapshot {
         pick(&["cpu package", "core (tctl/tdie)", "cpu (tctl/tdie)", "cpu (tctl)", "cpu (tdie)", "cpu die (average)", "core (tctl)", "cpu"])
             .filter(|t| *t > 0.0 && *t < 130.0)
     }
+    /// GPU (core / edge) temperature: HWiNFO "GPU Temperature", LibreHardwareMonitor "GPU Core".
+    pub fn gpu_temp(&self) -> Option<i32> {
+        let names = ["gpu temperature", "gpu core", "gpu edge temperature", "gpu edge"];
+        self.temps
+            .iter()
+            .find(|r| names.contains(&r.label.to_ascii_lowercase().trim()))
+            .map(|r| r.value.round() as i32)
+            .filter(|t| *t > 0 && *t < 150)
+    }
     /// GPU hotspot (junction) temperature.
     pub fn gpu_hotspot(&self) -> Option<i32> {
         self.temps

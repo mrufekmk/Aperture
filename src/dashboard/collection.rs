@@ -208,6 +208,10 @@ pub(super) fn paint(layout:Layout,p:&mut Painter,w:f32,h:f32,_sc:&Scale,d:&Data,
         // trend line), so the header no longer repeats it.
         secs[1].cells[3]=cell("Hotspot",&v.gpu[0]);
         secs[1].side=String::new();
+        // CPU header shows the processor model (e.g. "AMD Ryzen 7 9800X3D") instead of "8C/16T".
+        if !secs[0].device.is_empty() {
+            secs[0].side=secs[0].device.clone();
+        }
         push_hotspot(d.gpu.temp_hotspot_c);
     }
     for widget in widgets {

@@ -151,17 +151,75 @@ fn album(p:&mut Painter,r:R,d:&Data,cover:Option<&Cover>,ink:&Ink,k:f32) {
     }
 }
 
+thread_local! {
+    /// Hotspot temperature history for the Mruf layout (one sample per second).
+    static HOTSPOT: std::cell::RefCell<(VecDeque<f32>, Option<std::time::Instant>)> =
+        std::cell::RefCell::new((VecDeque::new(), None));
+}
+
+fn push_hotspot(t: Option<i32>) {
+    let Some(t) = t else { return };
+    HOTSPOT.with(|h| {
+        let mut h = h.borrow_mut();
+        if h.1.is_some_and(|i| i.elapsed().as_millis() < 1000) {
+            return;
+        }
+        h.1 = Some(std::time::Instant::now());
+        h.0.push_back(t as f32);
+        while h.0.len() > HIST {
+            h.0.pop_front();
+        }
+    });
+}
+
+/// Trend line beside the Hotspot reading (cell 3 of the wide GPU panel), on a 30-110 °C scale.
+fn hotspot_trend(p: &mut Painter, s: &Sec, r: R, ink: &Ink, k: f32) {
+    // Same grid as `hardware` in "wide" mode.
+    let pd = 20.0 * k;
+    let (x, y, w, h) = (r.0 + pd, r.1 + pd, r.2 - 2.0 * pd, r.3);
+    let (gx, gy, gw, gh) = (x + 270.0 * k, y + 25.0 * k, w - 270.0 * k, h - 55.0 * k);
+    let (cw, rh) = (gw / 3.0, gh / 2.0);
+    let (cx, cy) = (gx, gy + rh);
+    // Right part of the cell, clear of the value.
+    let c = &s.cells[3];
+    let vw = p.width(&c.value, 38.0 * k, W::Regular) + p.width(&c.unit, unit_cap(38.0 * k), W::Regular) + 24.0 * k;
+    let tx = cx + vw.max(cw * 0.42);
+    let tw = cx + cw - 16.0 * k - tx;
+    if tw < 40.0 * k {
+        return;
+    }
+    HOTSPOT.with(|hs| {
+        let hs = hs.borrow();
+        let shifted: VecDeque<f32> = hs.0.iter().map(|t| (t - 30.0).max(0.0)).collect();
+        trend(p, (tx, cy + 22.0 * k, tw, 40.0 * k), &shifted, 80.0, s.colors, k);
+    });
+    let _ = ink;
+}
+
 pub(super) fn paint(layout:Layout,p:&mut Painter,w:f32,h:f32,_sc:&Scale,d:&Data,v:&Vm,hist:Hist,cover:Option<&Cover>)->bool {
     let Some(widgets)=geometry(layout) else {return false;};
     let k=(w/1920.0).min(h/462.0);
     let ink=Ink { card: th().panel, ..dark_ink() };
     rect(p,(0.0,0.0,w,h),ink.bg,255);
-    let secs=sections(d,v,hist);
+    let mut secs=sections(d,v,hist);
+    let mruf=layout==Layout::Mruf;
+    if mruf {
+        // Mruf: the GPU clock reading becomes the hotspot temperature (with its own
+        // trend line), so the header no longer repeats it.
+        secs[1].cells[3]=cell("Hotspot",&v.gpu[0]);
+        secs[1].side=String::new();
+        push_hotspot(d.gpu.temp_hotspot_c);
+    }
     for widget in widgets {
         let r=(widget.r.0*k,widget.r.1*k,widget.r.2*k,widget.r.3*k);
         match widget.kind {
             "cpu"=>hardware(p,&secs[0],r,widget.mode,&ink,k),
-            "gpu"=>hardware(p,&secs[1],r,widget.mode,&ink,k),
+            "gpu"=> {
+                hardware(p,&secs[1],r,widget.mode,&ink,k);
+                if mruf && widget.mode=="wide" {
+                    hotspot_trend(p,&secs[1],r,&ink,k);
+                }
+            },
             "mem"=>hardware(p,&secs[2],r,widget.mode,&ink,k),
             "time"=>clock(p,r,v,&ink,k),
             "weather"=>weather(p,r,v,&ink,k),

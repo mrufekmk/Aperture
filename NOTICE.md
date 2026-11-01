@@ -93,6 +93,7 @@ released under the same GPL-3.0-or-later license.
 ## HuyBruh Dash additions
 
 - `src/resources/IntelMSR.bin`: official signed PawnIO module from [namazso/PawnIO.Modules](https://github.com/namazso/PawnIO.Modules) 0.2.11, LGPL-2.1-or-later, embedded unchanged.
+- `src/resources/LpcIO.bin` (fetched at build time): official signed PawnIO module from [namazso/PawnIO.Modules](https://github.com/namazso/PawnIO.Modules), LGPL-2.1-or-later, embedded unchanged.
 - `assets/Inter-*-subset.ttf`: subsets of [Inter](https://github.com/rsms/inter), SIL OFL 1.1 (`assets/Inter-OFL.txt`).
 
 

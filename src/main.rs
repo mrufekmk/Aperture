@@ -34,6 +34,7 @@ mod effect;
 mod pixel_game;
 mod pro;
 mod sysextra;
+mod superio;
 mod smooth_font;
 mod spectrum;
 mod tiles;
@@ -1569,6 +1570,15 @@ fn main() -> anyhow::Result<()> {
             std::thread::sleep(Duration::from_secs(1));
             println!("CPU sensor (PawnIO): temp={:?} power_w={:?} (needs Administrator)", cs.get_temp_c(), cs.calc_power_watts(e0, 1000));
         }
+        match superio::SuperIo::open() {
+            Some(s) => {
+                println!("Motherboard fans (PawnIO LpcIO): {}", s.chip);
+                for (i, f) in s.fans().iter().enumerate() {
+                    println!("  Fan #{} = {:?} RPM", i + 1, f);
+                }
+            }
+            None => println!("Motherboard fans (PawnIO LpcIO): no Nuvoton chip found (needs Administrator and PawnIO)"),
+        }
         println!("External sensors (HWiNFO / LibreHardwareMonitor): {:?}", aperture::sensors_ext::read_any());
         let s = System::new_all();
         println!("CPU: {:?} -> {:?}, cores {:?}/{}", s.cpus().first().map(|c| c.brand().to_string()), sysextra::clean_cpu_name(s.cpus().first().map(|c| c.brand()).unwrap_or("")), s.physical_core_count(), s.cpus().len());
@@ -1687,6 +1697,9 @@ fn main() -> anyhow::Result<()> {
     // Linux) — see cpu_freq.rs. Graceful: if it fails, the info line / CPU
     // panel shows N/A.
     let cpu_freq = cpu_freq::CpuFreq::new();
+    // Motherboard fan speeds straight from the Nuvoton Super I/O chip (PawnIO LpcIO).
+    let superio = superio::SuperIo::open();
+    let mut latest_fans: [Option<u32>; 7] = [None; 7];
 
     // LCD screenshot hotkey (global, DISABLED by default — enabled only
     // if the --screenshot-key argument is given). The frame saved is the
@@ -2027,6 +2040,9 @@ fn main() -> anyhow::Result<()> {
 
             // Real-time CPU frequency (see cpu_freq.rs).
             latest_cpu_mhz = cpu_freq.sample_mhz();
+            if let Some(s) = superio.as_ref() {
+                latest_fans = s.fans();
+            }
 
             // Weather: just reads whatever the background thread last fetched
             // (non-blocking); stays `None` until the first fetch succeeds.
@@ -2142,7 +2158,9 @@ fn main() -> anyhow::Result<()> {
             let extra = pro_extra.lock().map(|g| g.clone()).unwrap_or_default();
             let ext = extra.ext.as_ref().map(|(_, s)| s);
             let fan_pick = opts().pro.fan_sensor.clone();
-            let ext_fan = ext.and_then(|s| s.cpu_fan(Some(fan_pick.as_str()).filter(|f| !f.is_empty())));
+            // CPU fan: the motherboard chip first, HWiNFO / LHM only as a fallback.
+            let own_fan = latest_fans[superio::fan_index(&fan_pick)];
+            let ext_fan = own_fan.or_else(|| ext.and_then(|s| s.cpu_fan(Some(fan_pick.as_str()).filter(|f| !f.is_empty()))));
             let mut gpu_full = latest_gpu_data.clone();
             if gpu_full.temp_hotspot_c.is_none() {
                 gpu_full.temp_hotspot_c = ext.and_then(|s| s.gpu_hotspot());
@@ -2165,7 +2183,7 @@ fn main() -> anyhow::Result<()> {
                     }
                 };
                 set_status("cpu_temp", src(latest_cpu_temp.is_some(), ext.and_then(|s| s.cpu_temp()).is_some()));
-                set_status("cpu_fan", src(false, ext_fan.is_some()));
+                set_status("cpu_fan", src(own_fan.is_some(), ext_fan.is_some()));
                 set_status("gpu_temp", src(latest_gpu_data.temp_edge_c.is_some(), gpu_full.temp_edge_c.is_some()));
                 set_status("gpu_hotspot", src(latest_gpu_data.temp_hotspot_c.is_some(), gpu_full.temp_hotspot_c.is_some()));
                 set_status("ext", match extra.ext.as_ref().map(|(s, _)| *s) {

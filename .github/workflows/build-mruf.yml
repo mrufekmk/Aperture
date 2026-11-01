@@ -19,7 +19,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download -R namazso/PawnIO.Modules -D pm
+          gh release download -R namazso/PawnIO.Modules -p "*" -D pm
           Get-ChildItem pm | Format-Table Name, Length
           Get-ChildItem pm -Filter *.zip | ForEach-Object { Expand-Archive $_.FullName -DestinationPath "pm/x/$($_.BaseName)" -Force }
           $f = Get-ChildItem pm -Recurse -Filter LpcIO.bin | Select-Object -First 1

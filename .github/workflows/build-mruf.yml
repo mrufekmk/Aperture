@@ -27,7 +27,7 @@ jobs:
           Copy-Item $f.FullName src/resources/LpcIO.bin
           Get-FileHash src/resources/LpcIO.bin
       - run: cargo build --release --locked --bin aperture-display --bin aperture
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: aperture-mruf-windows
           path: |

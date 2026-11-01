@@ -1563,6 +1563,12 @@ fn main() -> anyhow::Result<()> {
         println!("ADL (AMD) full: {amd:?}");
         print!("{}", amd_sensor.dump());
         println!("System drive: {:?}", sysextra::read_disk());
+        {
+            let cs = cpu_sensor::CpuSensor::new();
+            let e0 = cs.sample_energy();
+            std::thread::sleep(Duration::from_secs(1));
+            println!("CPU sensor (PawnIO): temp={:?} power_w={:?} (needs Administrator)", cs.get_temp_c(), cs.calc_power_watts(e0, 1000));
+        }
         println!("External sensors (HWiNFO / LibreHardwareMonitor): {:?}", aperture::sensors_ext::read_any());
         let s = System::new_all();
         println!("CPU: {:?} -> {:?}, cores {:?}/{}", s.cpus().first().map(|c| c.brand().to_string()), sysextra::clean_cpu_name(s.cpus().first().map(|c| c.brand()).unwrap_or("")), s.physical_core_count(), s.cpus().len());

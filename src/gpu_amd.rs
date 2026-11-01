@@ -163,9 +163,122 @@ mod imp {
         Some(std::mem::transmute_copy(&addr))
     }
 
+    // === ADLX (`amdadlx64.dll`, installed with the Radeon driver) ===
+    // RDNA4 (RX 9000) no longer reports ASIC power through ADL PMLog (sensor 23),
+    // so board power is read through ADLX's performance monitoring instead.
+    // ADLX exposes C structs whose first field is a vtable pointer; the method
+    // indices below follow the C vtables in the ADLX SDK headers (ISystem.h,
+    // IPerformanceMonitoring.h). Methods use the system (stdcall) ABI, the
+    // exported init/terminate functions use cdecl.
+
+    /// Method `i` of the vtable of ADLX object `obj`.
+    unsafe fn vfn<T: Copy>(obj: *mut c_void, i: usize) -> T {
+        let vtbl = *(obj as *const *const *const c_void);
+        std::mem::transmute_copy(&*vtbl.add(i))
+    }
+    type AdlxReleaseFn = unsafe extern "system" fn(*mut c_void) -> i32;
+    type AdlxInit2Fn = unsafe extern "C" fn(u64, *mut *mut c_void, *mut *mut c_void) -> c_int;
+    type AdlxTerminateFn = unsafe extern "C" fn() -> c_int;
+    /// ADLX_FULL_VERSION of the SDK the vtables were taken from (2.0.0.125).
+    const ADLX_VERSION: u64 = (2u64 << 48) | 125;
+    // IADLXSystem (no IADLXInterface base): GetPerformanceMonitoringServices = 9.
+    const SYS_GET_PERF_SERVICES: usize = 9;
+    // IADLMapping (no base): GetADLXGPUFromAdlAdapterIndex = 1.
+    const MAP_GPU_FROM_ADL_INDEX: usize = 1;
+    // IADLXInterface base: Acquire = 0, Release = 1, QueryInterface = 2.
+    const RELEASE: usize = 1;
+    // IADLXPerformanceMonitoringServices: GetCurrentGPUMetrics = 18.
+    const PMS_CURRENT_GPU_METRICS: usize = 18;
+    // IADLXGPUMetrics: GPUPower = 9, GPUTotalBoardPower = 10.
+    const MET_GPU_POWER: usize = 9;
+    const MET_BOARD_POWER: usize = 10;
+
+    pub(super) struct Adlx {
+        pms: *mut c_void,
+        gpu: *mut c_void,
+        terminate: Option<AdlxTerminateFn>,
+    }
+
+    impl Adlx {
+        /// ADLX for the GPU with this ADL adapter index; `None` if ADLX is missing.
+        pub(super) fn new(adl_index: c_int) -> Option<Self> {
+            unsafe {
+                let dll = CString::new("amdadlx64.dll").ok()?;
+                let module = LoadLibraryA(PCSTR(dll.as_ptr() as *const u8)).ok()?;
+                let init = resolve::<AdlxInit2Fn>(module, "ADLXInitialize2")?;
+                let terminate = resolve::<AdlxTerminateFn>(module, "ADLXTerminate");
+                let mut system: *mut c_void = std::ptr::null_mut();
+                let mut mapping: *mut c_void = std::ptr::null_mut();
+                if init(ADLX_VERSION, &mut system, &mut mapping) != 0 || system.is_null() || mapping.is_null() {
+                    return None;
+                }
+                let fail = |gpu: *mut c_void| {
+                    if !gpu.is_null() {
+                        let rel: AdlxReleaseFn = vfn(gpu, RELEASE);
+                        rel(gpu);
+                    }
+                    if let Some(t) = terminate {
+                        t();
+                    }
+                    None
+                };
+                let mut gpu: *mut c_void = std::ptr::null_mut();
+                let gpu_from_index: unsafe extern "system" fn(*mut c_void, c_int, *mut *mut c_void) -> c_int =
+                    vfn(mapping, MAP_GPU_FROM_ADL_INDEX);
+                if gpu_from_index(mapping, adl_index, &mut gpu) != 0 || gpu.is_null() {
+                    return fail(gpu);
+                }
+                let mut pms: *mut c_void = std::ptr::null_mut();
+                let get_pms: unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> c_int =
+                    vfn(system, SYS_GET_PERF_SERVICES);
+                if get_pms(system, &mut pms) != 0 || pms.is_null() {
+                    return fail(gpu);
+                }
+                Some(Adlx { pms, gpu, terminate })
+            }
+        }
+
+        /// Total board power (W), else GPU chip power; `None` if neither is reported.
+        pub(super) fn power_w(&self) -> Option<i32> {
+            unsafe {
+                let current: unsafe extern "system" fn(*mut c_void, *mut c_void, *mut *mut c_void) -> c_int =
+                    vfn(self.pms, PMS_CURRENT_GPU_METRICS);
+                let mut m: *mut c_void = std::ptr::null_mut();
+                if current(self.pms, self.gpu, &mut m) != 0 || m.is_null() {
+                    return None;
+                }
+                let read = |i: usize| -> Option<f64> {
+                    let f: unsafe extern "system" fn(*mut c_void, *mut f64) -> c_int = vfn(m, i);
+                    let mut w = -1.0f64;
+                    (f(m, &mut w) == 0 && w.is_finite() && w > 0.0 && w < 2000.0).then_some(w)
+                };
+                let w = read(MET_BOARD_POWER).or_else(|| read(MET_GPU_POWER));
+                let rel: AdlxReleaseFn = vfn(m, RELEASE);
+                rel(m);
+                w.map(|w| w.round() as i32)
+            }
+        }
+    }
+
+    impl Drop for Adlx {
+        fn drop(&mut self) {
+            unsafe {
+                let rel: AdlxReleaseFn = vfn(self.pms, RELEASE);
+                rel(self.pms);
+                let rel: AdlxReleaseFn = vfn(self.gpu, RELEASE);
+                rel(self.gpu);
+                if let Some(t) = self.terminate {
+                    t();
+                }
+            }
+        }
+    }
+
     /// Internal ADL state: ADL2 context + target adapter index.
     /// Created once in `GpuAmdSensor::new()` and reused on every sample.
     pub(super) struct GpuAmdInner {
+        /// ADLX, used for power when PMLog does not report it (RDNA4).
+        adlx: Option<Adlx>,
         query_fn: AdlPMLogQueryFn,
         // `Some` only if Caps + Start FrameMetrics succeeded during init.
         frame_metrics_get_fn: Option<AdlFrameMetricsGetFn>,
@@ -336,6 +449,7 @@ mod imp {
                 let vram_total_mb = vram_of(adapter_index);
 
                 Some(GpuAmdInner {
+                    adlx: Adlx::new(adapter_index),
                     query_fn,
                     frame_metrics_get_fn,
                     frame_metrics_stop_fn,
@@ -392,7 +506,9 @@ mod imp {
                 temp_hotspot_c: get(PMLOG_TEMPERATURE_HOTSPOT)
                     .filter(|t| *t > 0)
                     .or_else(|| get(PMLOG_TEMPERATURE_HOTSPOT_GCD).filter(|t| *t > 0)),
-                power_w: get(PMLOG_ASIC_POWER),
+                power_w: get(PMLOG_ASIC_POWER)
+                    .filter(|w| *w > 0)
+                    .or_else(|| self.adlx.as_ref().and_then(|a| a.power_w())),
                 fan_rpm: get(PMLOG_FAN_RPM),
                 fps,
                 clock_mhz: get(PMLOG_CLK_GFXCLK),
@@ -411,6 +527,10 @@ mod imp {
             let status = unsafe { (self.query_fn)(self.context, self.adapter_index, &mut output) };
             let mut out = format!("ADL GPUs found:\n{}", self.candidates);
             out.push_str(&format!("ADL PMLog status={status} adapter={} name={:?} vram_total_mb={:?}\n", self.adapter_index, self.name, self.vram_total_mb));
+            match &self.adlx {
+                Some(a) => out.push_str(&format!("ADLX: available, power_w={:?}\n", a.power_w())),
+                None => out.push_str("ADLX: not available (amdadlx64.dll missing or init failed)\n"),
+            }
             for (i, s) in output.sensors.iter().enumerate() {
                 if s.supported != 0 {
                     out.push_str(&format!("  sensor[{i}] = {}\n", s.value));

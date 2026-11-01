@@ -2184,6 +2184,16 @@ fn main() -> anyhow::Result<()> {
                 };
                 set_status("cpu_temp", src(latest_cpu_temp.is_some(), ext.and_then(|s| s.cpu_temp()).is_some()));
                 set_status("cpu_fan", src(own_fan.is_some(), ext_fan.is_some()));
+                set_status(
+                    "fans",
+                    if superio.is_some() {
+                        let list: Vec<String> = latest_fans.iter().enumerate().map(|(i, f)| format!("#{}={}", i + 1, f.map_or("--".to_string(), |v| v.to_string()))).collect();
+                        format!("{} (shown: #{})", list.join(" "), superio::fan_index(&fan_pick) + 1)
+                    } else {
+                        "no chip".to_string()
+                    }
+                    .as_str(),
+                );
                 set_status("gpu_temp", src(latest_gpu_data.temp_edge_c.is_some(), gpu_full.temp_edge_c.is_some()));
                 set_status("gpu_hotspot", src(latest_gpu_data.temp_hotspot_c.is_some(), gpu_full.temp_hotspot_c.is_some()));
                 set_status("ext", match extra.ext.as_ref().map(|(s, _)| *s) {

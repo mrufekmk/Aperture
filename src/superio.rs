@@ -59,6 +59,8 @@ mod imp {
     pub struct SuperIo {
         io: PawnIo,
         base: u16,
+        /// Config port of the chip (0x2E or 0x4E).
+        port: u16,
         pub chip: String,
     }
 
@@ -78,7 +80,7 @@ mod imp {
 
         /// Finds a Nuvoton NCT679x on config port 0x2E (slot 0), else 0x4E (slot 1).
         pub fn open() -> Option<SuperIo> {
-            let mut s = SuperIo { io: PawnIo::open_with_module(LPCIO_MODULE)?, base: 0, chip: String::new() };
+            let mut s = SuperIo { io: PawnIo::open_with_module(LPCIO_MODULE)?, base: 0, port: 0, chip: String::new() };
             let _g = Guard::acquire()?;
             for (slot, port) in [(0u64, 0x2Eu16), (1, 0x4E)] {
                 if s.try_slot(slot, port) {
@@ -115,8 +117,25 @@ mod imp {
                 return false;
             }
             self.base = base & 0xFFF8;
+            self.port = port;
             self.chip = format!("Nuvoton chip {id:02X}{rev:02X} at {port:#X}, monitor base {:#X}", self.base);
             true
+        }
+
+        /// Clears the hardware monitor's I/O space lock (logical device 0x0B, register
+        /// 0x28 bit 4). ASUS firmware sets it again from time to time, after which every
+        /// fan register reads 0, so LibreHardwareMonitor clears it before each update too.
+        fn unlock(&self) {
+            let _ = self.port_out(self.port, 0x87);
+            let _ = self.port_out(self.port, 0x87);
+            if self.sio_out(0x07, 0x0B).is_some() {
+                if let Some(v) = self.sio_in(0x28) {
+                    if v & 0x10 != 0 {
+                        let _ = self.sio_out(0x28, v & !0x10);
+                    }
+                }
+            }
+            let _ = self.port_out(self.port, 0xAA);
         }
 
         fn read(&self, reg: u16) -> Option<u8> {
@@ -130,6 +149,7 @@ mod imp {
         pub fn fans(&self) -> [Option<u32>; 7] {
             let mut out = [None; 7];
             let Some(_g) = Guard::acquire() else { return out };
+            self.unlock();
             for (i, r) in FAN_REGS.iter().enumerate() {
                 if let (Some(hi), Some(lo)) = (self.read(*r), self.read(*r + 1)) {
                     let v = ((hi as u32) << 8) | lo as u32;

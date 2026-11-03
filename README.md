@@ -8,7 +8,7 @@ Tested on a Ryzen 7 9800X3D, Radeon RX 9070 XT and ASUS TUF GAMING B650-PLUS. Ev
 - **Motherboard fans without HWiNFO:** CPU fan speed is read directly from Nuvoton NCT679x Super I/O chips (NCT6799D on this board) through PawnIO's signed LpcIO module, clearing the chip's I/O lock before each read as ASUS firmware re-locks it. `pro_fan_sensor = Fan #N` selects the header (default Fan #2 = CPU_FAN on ASUS).
 - **Volume pop-up settings** (also in the settings app, under Music): `pro_volume_secs` sets how long it stays on screen (0 = off), `pro_volume_device` picks the playback device; the Windows default device is now followed when output is switched.
 - **Diagnostics:** `aperture-display.exe --diag` (run as administrator) lists every AMD GPU and its sensors, ADLX power, PawnIO CPU temperature/power, all motherboard fan headers and the playback devices. `trofeo-status.txt` also reports the GPU temperature source.
-- **Build:** `.github/workflows/build-mruf.yml` builds `aperture-display.exe` and `aperture.exe` on GitHub (fetching the LpcIO module from the PawnIO.Modules release) and offers them as a download on each run.
+- **Build:** `.github/workflows/build-simpletrofeodisplay.yml` builds `aperture-display.exe` and `aperture.exe` on GitHub (fetching the LpcIO module from the PawnIO.Modules release) and offers them as the **SimpleTrofeoDisplay-windows** download on each run.
 
 ---
 

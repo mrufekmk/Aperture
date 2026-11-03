@@ -1,6 +1,6 @@
-name: Build Aperture (mruf)
+name: Build SimpleTrofeoDisplay
 # Builds only the two Windows programs and uploads them as a downloadable artifact.
-# Skips the design checks of validate.yml (the custom "mruf" layout has no music box).
+# Skips the design checks, tests and previews of validate.yml, for a quicker build.
 on:
   push:
   workflow_dispatch:
@@ -29,7 +29,7 @@ jobs:
       - run: cargo build --release --locked --bin aperture-display --bin aperture
       - uses: actions/upload-artifact@v7
         with:
-          name: aperture-mruf-windows
+          name: SimpleTrofeoDisplay-windows
           path: |
             target/release/aperture-display.exe
             target/release/aperture.exe

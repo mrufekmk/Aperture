@@ -240,12 +240,6 @@ pub struct Settings {
     /// Portrait layouts: turn the picture counter-clockwise instead of clockwise.
     pub rotate_ccw: bool,
     /// Layout / theme to switch to while a game reports FPS.
-    pub game_layout: Option<Layout>,
-    pub game_theme: Option<Theme>,
-    /// Night schedule (start, end) in minutes after midnight, its theme and brightness (percent).
-    pub night: Option<(u32, u32)>,
-    pub night_theme: Option<Theme>,
-    pub night_dim: u32,
     /// Temperature (°C) that makes the screen flash; 0 = off.
     pub alert_cpu: u32,
     pub alert_gpu: u32,
@@ -261,7 +255,7 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { layouts: vec![Layout::Axis], themes: vec![THEMES[0]], style: Style::Cards, interval_min: 30, cover_color: true, song_popup: true, rotate_ccw: false, game_layout: None, game_theme: None, night: None, night_theme: None, night_dim: 40, alert_cpu: 0, alert_gpu: 0, clock12: false, fan_sensor: String::new(), volume_secs: OSD_SECS, volume_device: String::new() }
+        Settings { layouts: vec![Layout::Axis], themes: vec![THEMES[0]], style: Style::Cards, interval_min: 30, cover_color: true, song_popup: true, rotate_ccw: false, alert_cpu: 0, alert_gpu: 0, clock12: false, fan_sensor: String::new(), volume_secs: OSD_SECS, volume_device: String::new() }
     }
 }
 
@@ -335,17 +329,6 @@ fn theme_of(name: &str, accent: Option<Rgb>, key: &str) -> anyhow::Result<Theme>
         .ok_or_else(|| anyhow::anyhow!("{key}: '{name}' is not a theme ({}, custom, #RRGGBB, all)", theme_names()))
 }
 
-fn parse_time_range(key: &str, v: &str) -> anyhow::Result<(u32, u32)> {
-    let bad = || anyhow::anyhow!("{key}: '{v}' not valid (HH:MM-HH:MM, e.g. 22:00-07:00)");
-    let (a, b) = v.split_once('-').ok_or_else(bad)?;
-    let hm = |t: &str| -> Option<u32> {
-        let (h, m) = t.trim().split_once(':')?;
-        let (h, m): (u32, u32) = (h.parse().ok()?, m.parse().ok()?);
-        (h < 24 && m < 60).then_some(h * 60 + m)
-    };
-    Ok((hm(a).ok_or_else(bad)?, hm(b).ok_or_else(bad)?))
-}
-
 pub fn parse(file: &ConfigFile) -> anyhow::Result<Settings> {
     let mut s = Settings::default();
     let accent = match file.get("pro_accent") {
@@ -367,31 +350,8 @@ pub fn parse(file: &ConfigFile) -> anyhow::Result<Settings> {
     } else if let Some(c) = accent {
         s.themes = vec![Theme::from_accent(c)];
     }
-    for (key, slot) in [("pro_game_theme", 0), ("pro_night_theme", 1)] {
-        if let Some(v) = file.get(key) {
-            let t = theme_of(&v.trim().to_ascii_lowercase(), accent, key)?;
-            if slot == 0 {
-                s.game_theme = Some(t);
-            } else {
-                s.night_theme = Some(t);
-            }
-        }
-    }
-    if let Some(v) = file.get("pro_game_layout") {
-        let name = v.trim().to_ascii_lowercase();
-        s.game_layout = Some(Layout::find(&name).ok_or_else(|| anyhow::anyhow!("pro_game_layout: '{name}' is not a layout"))?);
-    }
-    if let Some(v) = file.get("pro_night") {
-        if !matches!(v.trim().to_ascii_lowercase().as_str(), "" | "off" | "no" | "false") {
-            s.night = Some(parse_time_range("pro_night", v.trim())?);
-        }
-    }
-    if let Some(v) = file.get_u32("pro_night_dim").map_err(|e| anyhow::anyhow!(e))? {
-        if !(10..=100).contains(&v) {
-            anyhow::bail!("pro_night_dim: 10-100 (percent brightness at night)");
-        }
-        s.night_dim = v;
-    }
+    // Game mode (pro_game_layout / pro_game_theme) and night mode (pro_night, pro_night_theme,
+    // pro_night_dim) were removed in SimpleTrofeoDisplay; those keys are ignored if present.
     for (key, slot) in [("pro_alert_cpu", 0), ("pro_alert_gpu", 1)] {
         if let Some(v) = file.get_u32(key).map_err(|e| anyhow::anyhow!(e))? {
             if v != 0 && !(40..=120).contains(&v) {
@@ -610,21 +570,6 @@ pub struct ProScreen {
     /// Start-up logo: when it appeared (None = not shown yet), and whether it is over.
     splash_since: Option<Instant>,
     splash_done: bool,
-}
-
-/// Multiplies every pixel of `area` by `pct` percent (night dimming).
-fn dim_area(fb: &mut Framebuffer, area: (u32, u32, u32, u32), pct: u32) {
-    let lut: Vec<u8> = (0..256u32).map(|v| (v * pct / 100) as u8).collect();
-    let fw = fb.width();
-    let rows = area.1..(area.1 + area.3).min(fb.height());
-    let (x0, x1) = (area.0 as usize * 3, (area.0 + area.2).min(fw) as usize * 3);
-    let bytes = fb.as_bytes_mut();
-    for y in rows {
-        let row = &mut bytes[y as usize * fw as usize * 3..(y as usize + 1) * fw as usize * 3];
-        for b in &mut row[x0..x1] {
-            *b = lut[*b as usize];
-        }
-    }
 }
 
 fn blend_rect(fb: &mut Framebuffer, x: u32, y: u32, w: u32, h: u32, c: Rgb, a: u8) {
@@ -869,28 +814,11 @@ impl ProScreen {
         let settings = opts().pro;
         CLOCK_12H.store(settings.clock12, std::sync::atomic::Ordering::Relaxed);
         let now = Local::now();
-        let (mut theme, mut layout) = pick(&settings);
+        let (mut theme, layout) = pick(&settings);
         self.push_history(d);
         self.update_cover(d);
         let gaming = self.update_game(d);
         self.update_alerts(d, &settings);
-        let night = settings.night.is_some_and(|(a, b)| {
-            let m = now.hour() * 60 + now.minute();
-            if a <= b { m >= a && m < b } else { m >= a || m < b }
-        });
-        if night {
-            if let Some(t) = settings.night_theme {
-                theme = t;
-            }
-        }
-        if gaming {
-            if let Some(l) = settings.game_layout {
-                layout = l;
-            }
-            if let Some(t) = settings.game_theme {
-                theme = t;
-            }
-        }
         crate::smooth_font::set_family(if layout.clean() { crate::smooth_font::Family::Inter } else { crate::smooth_font::Family::Chakra });
         if settings.cover_color {
             if let Some(c) = self.cover.as_ref() {
@@ -992,9 +920,6 @@ impl ProScreen {
         let t = self.marquee_since.elapsed().as_secs_f32();
         for m in &self.marquees {
             paint_marquee(fb, area.0, area.1, m, self.marquee_k, t);
-        }
-        if night && settings.night_dim < 100 {
-            dim_area(fb, area, settings.night_dim);
         }
         self.paint_alert(fb, area);
         if self.vol_since.is_some_and(|t| t.elapsed().as_secs_f32() < self.osd_secs) {
@@ -1190,7 +1115,8 @@ impl ProScreen {
         if t >= self.osd_secs {
             return;
         }
-        let a = (t / 0.12).min(1.0) * ((self.osd_secs - t) / 0.35).min(1.0);
+        // Appears at once, fades out over the last second (or all of it if shorter).
+        let a = ((self.osd_secs - t) / 1.0).min(1.0);
         let al = |x: f32| (x * a).round().clamp(0.0, 255.0) as u8;
         let (aw, ah) = (area.2 as f32, area.3 as f32);
         let k = (ah / 462.0).min(aw / 1920.0 * 1.15).clamp(0.5, 2.0) * if self.portrait { 0.66 } else { 1.0 };

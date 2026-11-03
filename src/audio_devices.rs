@@ -17,7 +17,6 @@ mod imp {
     use windows::Win32::Devices::FunctionDiscovery::PKEY_Device_FriendlyName;
     use windows::Win32::Media::Audio::{eConsole, eRender, IMMDevice, IMMDeviceEnumerator, MMDeviceEnumerator, DEVICE_STATE_ACTIVE};
     use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CoTaskMemFree, CLSCTX_ALL, COINIT_MULTITHREADED, STGM_READ};
-    use windows::Win32::UI::Shell::PropertiesSystem::PropVariantToStringAlloc;
 
     fn enumerator() -> Option<IMMDeviceEnumerator> {
         unsafe {
@@ -40,10 +39,8 @@ mod imp {
         unsafe {
             let store = d.OpenPropertyStore(STGM_READ).ok()?;
             let v = store.GetValue(&PKEY_Device_FriendlyName).ok()?;
-            let p = PropVariantToStringAlloc(&v).ok()?;
-            let s = p.to_string().ok();
-            CoTaskMemFree(Some(p.0 as *const _));
-            s
+            let s = v.to_string();
+            (!s.is_empty()).then_some(s)
         }
     }
 

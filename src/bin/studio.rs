@@ -421,6 +421,9 @@ struct App {
     city: String,
     custom: [u8; 3],
     logo: Option<egui::TextureHandle>,
+    /// Playback devices for the volume source list, refreshed every few seconds.
+    audio_devs: Vec<aperture::audio_devices::Device>,
+    audio_devs_at: Option<Instant>,
 }
 
 impl App {
@@ -490,6 +493,8 @@ impl App {
                 let img = egui::ColorImage::from_rgba_unmultiplied([i.width() as usize, i.height() as usize], i.as_raw());
                 cc.egui_ctx.load_texture("logo", img, egui::TextureOptions::LINEAR)
             }),
+            audio_devs: Vec::new(),
+            audio_devs_at: None,
         }
     }
 
@@ -1170,6 +1175,56 @@ impl App {
         picked
     }
 
+    /// Volume pop-up: how long it stays on screen, and which playback device it follows.
+    fn volume_card(&mut self, ui: &mut egui::Ui) {
+        if self.audio_devs_at.map_or(true, |t| t.elapsed() >= Duration::from_secs(5)) {
+            self.audio_devs = aperture::audio_devices::list();
+            self.audio_devs_at = Some(Instant::now());
+        }
+        section_title(ui, self.t("Volume pop-up", "Thông báo âm lượng"), self.t("Shown when the volume changes or is muted.", "Hiện khi đổi âm lượng hoặc tắt tiếng."));
+        card(ui, |ui| {
+            // Duration: 0 = off.
+            let mut secs: f32 = self.get("pro_volume_secs").and_then(|v| v.trim().trim_end_matches('s').trim().parse().ok()).unwrap_or(1.8f32).clamp(0.0, 10.0);
+            let lbl = self.t("Time on screen", "Thời gian hiển thị").to_string();
+            let help = self.t("Seconds after the last change. 0 turns the pop-up off.", "Số giây sau lần đổi cuối. 0 = tắt.").to_string();
+            row(ui, &lbl, &help, |ui| {
+                if ui.add(egui::Slider::new(&mut secs, 0.0..=10.0).step_by(0.5).suffix(" s")).changed() {
+                    let v = if secs.fract() == 0.0 { format!("{secs:.0}") } else { format!("{secs:.1}") };
+                    self.set("pro_volume_secs", &v);
+                }
+            });
+            divider(ui);
+            // Source device: empty = Windows default (followed when it changes).
+            let cur = self.get("pro_volume_device").unwrap_or_default();
+            let def = self.t("Windows default device", "Thiết bị mặc định của Windows").to_string();
+            let lbl = self.t("Volume source", "Nguồn âm lượng").to_string();
+            let help = self.t("The default follows Windows when you switch output.", "Mặc định sẽ theo Windows khi bạn đổi thiết bị phát.").to_string();
+            let devs = self.audio_devs.clone();
+            let mut pick: Option<String> = None;
+            row(ui, &lbl, &help, |ui| {
+                let shown = if cur.is_empty() { def.clone() } else { cur.clone() };
+                egui::ComboBox::from_id_salt("volume_device").selected_text(shown).width(300.0).show_ui(ui, |ui| {
+                    if ui.selectable_label(cur.is_empty(), &def).clicked() {
+                        pick = Some(String::new());
+                    }
+                    for d in &devs {
+                        if ui.selectable_label(d.name == cur, &d.name).clicked() {
+                            pick = Some(d.name.clone());
+                        }
+                    }
+                });
+            });
+            match pick.as_deref() {
+                Some("") => self.unset("pro_volume_device"),
+                Some(v) => self.set("pro_volume_device", v),
+                None => {}
+            }
+            if !cur.is_empty() && !devs.is_empty() && !devs.iter().any(|d| d.name == cur) {
+                ui.label(RichText::new(self.t("This device is not connected right now; the pop-up keeps following the last device until it is.", "Thiết bị này hiện không kết nối; thông báo vẫn theo thiết bị trước cho đến khi nó kết nối.")).font(font(13.0, Weight::Regular)).color(MUTED));
+            }
+        });
+    }
+
     fn page_features(&mut self, ui: &mut egui::Ui) {
         section_title(ui, self.t("Music", "Nhạc"), "");
         card(ui, |ui| {
@@ -1182,6 +1237,8 @@ impl App {
                 }
             });
         });
+        ui.add_space(12.0);
+        self.volume_card(ui);
         ui.add_space(12.0);
         section_title(ui, self.t("Game mode", "Chế độ chơi game"), self.t("Switches layout while a game shows FPS, and back when you quit.", "Tự đổi bố cục khi game có FPS, thoát game thì tự trở lại."));
         card(ui, |ui| {

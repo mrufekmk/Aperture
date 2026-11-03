@@ -253,11 +253,15 @@ pub struct Settings {
     pub clock12: bool,
     /// Label of the fan to show as CPU fan (HWiNFO / LibreHardwareMonitor); empty = automatic.
     pub fan_sensor: String,
+    /// `pro_volume_secs`: seconds the volume pop-up stays on screen (0 = off).
+    pub volume_secs: f32,
+    /// `pro_volume_device`: playback device to watch; empty = Windows default.
+    pub volume_device: String,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { layouts: vec![Layout::Axis], themes: vec![THEMES[0]], style: Style::Cards, interval_min: 30, cover_color: true, song_popup: true, rotate_ccw: false, game_layout: None, game_theme: None, night: None, night_theme: None, night_dim: 40, alert_cpu: 0, alert_gpu: 0, clock12: false, fan_sensor: String::new() }
+        Settings { layouts: vec![Layout::Axis], themes: vec![THEMES[0]], style: Style::Cards, interval_min: 30, cover_color: true, song_popup: true, rotate_ccw: false, game_layout: None, game_theme: None, night: None, night_theme: None, night_dim: 40, alert_cpu: 0, alert_gpu: 0, clock12: false, fan_sensor: String::new(), volume_secs: OSD_SECS, volume_device: String::new() }
     }
 }
 
@@ -402,6 +406,13 @@ pub fn parse(file: &ConfigFile) -> anyhow::Result<Settings> {
     }
     if let Some(v) = file.get("pro_fan_sensor") {
         s.fan_sensor = v.trim().to_string();
+    }
+    if let Some(v) = file.get("pro_volume_secs") {
+        let n: f32 = v.trim().trim_end_matches('s').trim().parse().map_err(|_| anyhow::anyhow!("pro_volume_secs: '{v}' is not a number of seconds (0 = off)"))?;
+        s.volume_secs = n.clamp(0.0, 30.0);
+    }
+    if let Some(v) = file.get("pro_volume_device") {
+        s.volume_device = v.trim().to_string();
     }
     if let Some(v) = file.get("pro_clock") {
         s.clock12 = match v.trim().to_ascii_lowercase().as_str() {
@@ -573,6 +584,8 @@ pub struct ProScreen {
     /// Last master volume (percent, muted) and since when the volume pop-up shows.
     vol: Option<(f32, bool)>,
     vol_since: Option<Instant>,
+    /// Seconds the volume pop-up stays on screen (`pro_volume_secs`; 0 = never shown).
+    osd_secs: f32,
     osd: Layer,
     /// Portrait layouts: the canvas is drawn upright here, then turned into `layer`.
     canvas: Layer,
@@ -654,6 +667,7 @@ impl ProScreen {
             marquee_k: 1.0,
             vol: None,
             vol_since: None,
+            osd_secs: OSD_SECS,
             osd: Layer::new(1, 1),
             canvas: Layer::new(1, 1),
             portrait: false,
@@ -983,7 +997,7 @@ impl ProScreen {
             dim_area(fb, area, settings.night_dim);
         }
         self.paint_alert(fb, area);
-        if self.vol_since.is_some_and(|t| t.elapsed().as_secs_f32() < OSD_SECS) {
+        if self.vol_since.is_some_and(|t| t.elapsed().as_secs_f32() < self.osd_secs) {
             self.paint_volume_osd(fb, area);
         } else {
             self.paint_song_osd(fb, area, d);
@@ -1140,11 +1154,23 @@ impl ProScreen {
         }
     }
 
+    /// `pro_volume_secs`: how long the volume pop-up stays on screen (0 = off).
+    pub fn set_volume_secs(&mut self, secs: f32) {
+        self.osd_secs = secs.clamp(0.0, 30.0);
+    }
+
+    /// Forget the last volume (the watched device changed), so the next reading
+    /// does not count as a change.
+    pub fn reset_volume(&mut self) {
+        self.vol = None;
+        self.vol_since = None;
+    }
+
     /// Feed the current master volume; a change (not the first reading) opens the pop-up.
     pub fn note_volume(&mut self, v: Option<(f32, bool)>) {
         if let Some(v) = v {
             if let Some(old) = self.vol {
-                if (old.0 - v.0).abs() > 0.3 || old.1 != v.1 {
+                if self.osd_secs > 0.0 && ((old.0 - v.0).abs() > 0.3 || old.1 != v.1) {
                     self.vol_since = Some(Instant::now());
                 }
             }
@@ -1154,17 +1180,17 @@ impl ProScreen {
 
     /// True while the volume pop-up is on screen (the main loop then draws smooth frames).
     pub fn osd_active(&self) -> bool {
-        self.vol_since.is_some_and(|t| t.elapsed().as_secs_f32() < OSD_SECS) || self.song_osd_active() || self.alert_active() || !self.splash_done
+        self.vol_since.is_some_and(|t| t.elapsed().as_secs_f32() < self.osd_secs) || self.song_osd_active() || self.alert_active() || !self.splash_done
     }
 
     /// A clean pill in the middle of the screen: speaker, level bar, percent.
     fn paint_volume_osd(&mut self, fb: &mut Framebuffer, area: (u32, u32, u32, u32)) {
         let (Some(since), Some((level, muted))) = (self.vol_since, self.vol) else { return };
         let t = since.elapsed().as_secs_f32();
-        if t >= OSD_SECS {
+        if t >= self.osd_secs {
             return;
         }
-        let a = (t / 0.12).min(1.0) * ((OSD_SECS - t) / 0.35).min(1.0);
+        let a = (t / 0.12).min(1.0) * ((self.osd_secs - t) / 0.35).min(1.0);
         let al = |x: f32| (x * a).round().clamp(0.0, 255.0) as u8;
         let (aw, ah) = (area.2 as f32, area.3 as f32);
         let k = (ah / 462.0).min(aw / 1920.0 * 1.15).clamp(0.5, 2.0) * if self.portrait { 0.66 } else { 1.0 };

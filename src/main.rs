@@ -1579,6 +1579,14 @@ fn main() -> anyhow::Result<()> {
             }
             None => println!("Motherboard fans (PawnIO LpcIO): no Nuvoton chip found (needs Administrator and PawnIO)"),
         }
+        {
+            let def = aperture::audio_devices::resolve("");
+            println!("Playback devices (pro_volume_device):");
+            for d in aperture::audio_devices::list() {
+                let mark = if def.as_deref() == Some(d.id.as_str()) { "  [Windows default]" } else { "" };
+                println!("  {}{}", d.name, mark);
+            }
+        }
         println!("External sensors (HWiNFO / LibreHardwareMonitor): {:?}", aperture::sensors_ext::read_any());
         let s = System::new_all();
         println!("CPU: {:?} -> {:?}, cores {:?}/{}", s.cpus().first().map(|c| c.brand().to_string()), sysextra::clean_cpu_name(s.cpus().first().map(|c| c.brand()).unwrap_or("")), s.physical_core_count(), s.cpus().len());
@@ -1770,10 +1778,14 @@ fn main() -> anyhow::Result<()> {
         eprintln!("WARNING: GPU usage is not available on this system, the info line will show N/A.");
     }
     let mut netdisk_monitor = netdisk::NetDiskMonitor::new();
-    let audio_endpoint = media::AudioMonitor::new().ok();
+    let mut audio_endpoint = media::AudioMonitor::new().ok();
     if audio_endpoint.is_none() {
         eprintln!("WARNING: master volume could not be read, the info line will show N/A.");
     }
+    // Playback device being watched (`pro_volume_device`), re-checked every 2 s so a
+    // change of the Windows default device, or of the setting, is followed.
+    let mut audio_id: Option<String> = None;
+    let mut audio_checked: Option<Instant> = None;
     let (now_playing, track_shared) = media::spawn_track_watcher()?;
     let mut music = music_screen::MusicScreen::new();
     let mut game = pixel_game::PixelGame::new();
@@ -1982,6 +1994,21 @@ fn main() -> anyhow::Result<()> {
             (true, tiles::BgMode::Image) => target_fps.max(config.active_fps),
             _ => target_fps,
         };
+        // Which playback device to watch, and how long the pop-up shows (both live settings).
+        if audio_checked.map_or(true, |t| t.elapsed() >= Duration::from_secs(2)) {
+            audio_checked = Some(Instant::now());
+            let wanted = opts().pro.volume_device.clone();
+            if let Some(id) = aperture::audio_devices::resolve(&wanted) {
+                if audio_id.as_deref() != Some(id.as_str()) {
+                    if let Ok(m) = media::AudioMonitor::for_id(&id) {
+                        audio_endpoint = Some(m);
+                        audio_id = Some(id);
+                        pro_screen.reset_volume();
+                    }
+                }
+            }
+        }
+        pro_screen.set_volume_secs(opts().pro.volume_secs);
         // Master volume every frame (a cheap COM read): a change opens the pro screen's pop-up.
         if let Some(audio_ep) = audio_endpoint.as_ref() {
             if let Ok(v) = audio_ep.sample() {

@@ -206,6 +206,18 @@ mod imp {
             }
         }
 
+        /// The playback device with this endpoint ID (see `aperture::audio_devices`).
+        pub fn for_id(id: &str) -> anyhow::Result<Self> {
+            unsafe {
+                let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+                let enumerator: IMMDeviceEnumerator =
+                    CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?;
+                let device = enumerator.GetDevice(&windows::core::HSTRING::from(id))?;
+                let endpoint_volume: IAudioEndpointVolume = device.Activate(CLSCTX_ALL, None)?;
+                Ok(Self { endpoint_volume })
+            }
+        }
+
         /// `(volume_percent 0-100, muted)`.
         pub fn sample(&self) -> anyhow::Result<(f32, bool)> {
             unsafe {
@@ -331,6 +343,11 @@ mod imp {
 
     impl AudioMonitor {
         pub fn new() -> anyhow::Result<Self> {
+            Ok(Self)
+        }
+
+        /// Device selection is Windows-only; other platforms use the default sink.
+        pub fn for_id(_id: &str) -> anyhow::Result<Self> {
             Ok(Self)
         }
 
@@ -471,6 +488,11 @@ mod imp {
 
     impl AudioMonitor {
         pub fn new() -> anyhow::Result<Self> {
+            Ok(Self)
+        }
+
+        /// Device selection is Windows-only; other platforms use the default sink.
+        pub fn for_id(_id: &str) -> anyhow::Result<Self> {
             Ok(Self)
         }
 

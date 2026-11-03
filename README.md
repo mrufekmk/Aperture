@@ -1,3 +1,17 @@
+## Changes in this fork (mrufekmk/Aperture, branch `mruf`) — 3 November 2026
+
+Tested on a Ryzen 7 9800X3D, Radeon RX 9070 XT and ASUS TUF GAMING B650-PLUS. Every reading now comes straight from the hardware drivers; HWiNFO is no longer needed (it is still used as a fallback if it is running).
+
+- **New `mruf` layout** (based on Duet): no music box, a larger weather panel with the forecast, memory shown as usage only (ring + Used / Free), GPU **Hotspot** in place of GPU clock with its own trend line, and the CPU model name (e.g. "AMD Ryzen 7 9800X3D") in the CPU header instead of cores/threads. Available in the settings app's layout gallery.
+- **AMD GPU on Ryzen systems with integrated graphics:** the program now picks the discrete card (most video memory, reports temperatures) instead of the first AMD device, which could be the CPU's built-in graphics. GPU temperature and hotspot now work on the RX 9070 XT.
+- **RX 9000 (RDNA4) support:** GPU temperature falls back to the core sensor when the edge sensor is missing, and GPU power is read through AMD ADLX (total board power), as these cards no longer report power through ADL.
+- **Motherboard fans without HWiNFO:** CPU fan speed is read directly from Nuvoton NCT679x Super I/O chips (NCT6799D on this board) through PawnIO's signed LpcIO module, clearing the chip's I/O lock before each read as ASUS firmware re-locks it. `pro_fan_sensor = Fan #N` selects the header (default Fan #2 = CPU_FAN on ASUS).
+- **Volume pop-up settings** (also in the settings app, under Music): `pro_volume_secs` sets how long it stays on screen (0 = off), `pro_volume_device` picks the playback device; the Windows default device is now followed when output is switched.
+- **Diagnostics:** `aperture-display.exe --diag` (run as administrator) lists every AMD GPU and its sensors, ADLX power, PawnIO CPU temperature/power, all motherboard fan headers and the playback devices. `trofeo-status.txt` also reports the GPU temperature source.
+- **Build:** `.github/workflows/build-mruf.yml` builds `aperture-display.exe` and `aperture.exe` on GitHub (fetching the LpcIO module from the PawnIO.Modules release) and offers them as a download on each run.
+
+---
+
 <p align="center"><img src="docs/img/aperture/brand.png" alt="Aperture â€” a quieter view of your system" width="100%"></p>
 
 <p align="center"><b>A native system display for the Thermalright Trofeo Vision 9.16â€³.</b><br>Large type. Complete readings. A little less noise.</p>

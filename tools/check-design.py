@@ -9,7 +9,9 @@ for l in spec['layouts']:
     assert l['key'] not in keys
     keys.add(l['key'])
     widgets=l['widgets']
-    assert sorted(w[0] for w in widgets)==sorted(['cpu','gpu','mem','time','weather','music'])
+    # A layout may leave a widget out on purpose by listing it in "omit" (e.g. mruf: no music).
+    required=[k for k in ['cpu','gpu','mem','time','weather','music'] if k not in l.get('omit',[])]
+    assert sorted(w[0] for w in widgets)==sorted(required),(l['key'],'widgets')
     for i,(kind,x,y,w,h,mode) in enumerate(widgets):
         assert x>=0 and y>=0 and x+w<=W and y+h<=H,(l['key'],kind,'outside canvas')
         assert w>0 and h>0

@@ -17,7 +17,7 @@
     {"key":"duet", "name":"Duet", "en":"CPU and GPU in dialogue. A dedicated memory rail.", "vi":"CPU và GPU song song, bộ nhớ thành cột riêng.", "widgets":[
       ["cpu",24,24,1160,199,"wide"], ["gpu",24,239,1160,199,"wide"], ["mem",1200,24,344,414,"column"],
       ["time",1560,24,336,132,"large"], ["weather",1560,172,336,158,"compact"], ["music",1560,346,336,92,"compact"]]},
-    {"key":"mruf", "name":"Mruf", "en":"Duet without music: memory usage only, a larger weather panel.", "vi":"Duet không có nhạc: chỉ mức dùng bộ nhớ, thời tiết lớn hơn.", "widgets":[
+    {"key":"mruf", "name":"Mruf", "en":"Duet without music: memory usage only, a larger weather panel.", "vi":"Duet không có nhạc: chỉ mức dùng bộ nhớ, thời tiết lớn hơn.", "omit":["music"], "widgets":[
       ["cpu",24,24,1160,199,"wide"], ["gpu",24,239,1160,199,"wide"], ["mem",1200,24,344,414,"usage"],
       ["time",1560,24,336,132,"large"], ["weather",1560,172,336,266,"large"]]},
     {"key":"orbit", "name":"Orbit", "en":"Measured arcs, a central clock, balanced side rails.", "vi":"Vòng cung tiết chế, đồng hồ giữa, hai cánh cân đối.", "widgets":[

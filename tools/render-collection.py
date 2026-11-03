@@ -10,9 +10,14 @@ scratch=root/'target/design-check'
 scratch.mkdir(parents=True,exist_ok=True)
 base=(root/'windows/trofeo.conf').read_text(encoding='utf-8')
 results=[]
+omit={l['key']:l.get('omit',[]) for l in spec['layouts']}
 for layout in [l['key'] for l in spec['layouts']]+['focus','grid']:
     for palette in spec['palettes']:
-        for state in (['music','idle','empty'] if palette=='mineral' else ['music']):
+        states=['music','idle','empty'] if palette=='mineral' else ['music']
+        # Without a music widget, "idle" draws the same frame as "music".
+        if 'music' in omit.get(layout,[]):
+            states=[s for s in states if s!='idle']
+        for state in states:
             cfg=base.replace('pro_layout = axis',f'pro_layout = {layout}').replace('pro_theme = mineral',f'pro_theme = {palette}')
             config=scratch/f'{layout}-{palette}-{state}.conf'
             config.write_text(cfg,encoding='utf-8')

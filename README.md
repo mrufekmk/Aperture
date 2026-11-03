@@ -1,4 +1,4 @@
-## Changes in this fork (mrufekmk/Aperture, branch `mruf`) — 3 November 2026
+## Changes in this fork (mrufekmk/Aperture, branch `SimpleTrofeoDisplay`) — 3 November 2026
 
 Tested on a Ryzen 7 9800X3D, Radeon RX 9070 XT and ASUS TUF GAMING B650-PLUS. Every reading now comes straight from the hardware drivers; HWiNFO is no longer needed (it is still used as a fallback if it is running).
 
